@@ -9,6 +9,28 @@
 #include "decoder_only.h"
 #include "whisper.h"
 #include "kernels.h"
+#ifdef USE_DML
+//  Because dml_provider_factory includes windows headers that #define min and max, this next line will prevent this from happening
+#define NOMINMAX
+#include "dml_provider_factory.h"
+
+EXTERN_C IMAGE_DOS_HEADER __ImageBase;
+
+static std::wstring CurrentModulePath() {
+  wchar_t path[MAX_PATH];
+  GetModuleFileNameW((HINSTANCE)&__ImageBase, path, _countof(path));
+
+  wchar_t absolute_path[MAX_PATH];
+  wchar_t* name;
+  GetFullPathNameW(path, _countof(path), absolute_path, &name);
+
+  auto idx = std::distance(absolute_path, name);
+  auto out_path = std::wstring(absolute_path);
+  out_path.resize(idx);
+
+  return out_path;
+}
+#endif
 
 namespace Generators {
 
@@ -188,6 +210,14 @@ SessionInfo::SessionInfo(OrtSession& session) {
   }
 }
 
+bool SessionInfo::HasInput(const std::string& name) const {
+  return inputs_.find(name) != inputs_.end();
+}
+
+bool SessionInfo::HasOutput(const std::string& name) const {
+  return outputs_.find(name) != outputs_.end();
+}
+
 ONNXTensorElementDataType SessionInfo::GetInputDataType(const std::string& name) const {
   auto result = inputs_.find(name);
   if (result == inputs_.end())
@@ -291,7 +321,17 @@ void Model::CreateSessionOptions() {
 
       Ort::ThrowOnError(Ort::api->UpdateROCMProviderOptions(&ort_provider_options, keys.data(), values.data(), keys.size()));
       ort_options.AppendExecutionProvider_ROCM(ort_provider_options);
-      device_type_ = DeviceType::CPU;  // Scoring uses CPU, even though the model uses ROCM
+#ifdef USE_DML
+    } else if (provider_options.name == "dml") {
+      const OrtDmlApi* p_dml_api{};
+      Ort::ThrowOnError(Ort::api->GetExecutionProviderApi("DML", ORT_API_VERSION, reinterpret_cast<const void**>(&p_dml_api)));
+      if (!p_dml_api)
+        throw std::runtime_error("Unexpected nullptr getting OrtDmlApi");
+      auto directml_dll = CurrentModulePath() + L"DirectML.dll";
+      if (LoadLibraryExW(directml_dll.c_str(), nullptr, 0) == NULL)
+        throw std::runtime_error("DirectML.dll not found");
+      p_dml_api->SessionOptionsAppendExecutionProvider_DML(&ort_options, 0);
+#endif
     } else
       throw std::runtime_error("Unknown provider type: " + provider_options.name);
   }

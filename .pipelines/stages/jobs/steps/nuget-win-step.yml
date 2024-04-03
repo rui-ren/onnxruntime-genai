@@ -16,7 +16,7 @@ steps:
     DisplayName: 'ESRP - Sign C# dlls'
     Pattern: '*OnnxRuntimeGenAI*.dll'
 - powershell: |
-    $VERSION = '0.1.0-rc1'
+    $VERSION = '0.1.0-rc4'
     nuget.exe pack Microsoft.ML.OnnxRuntimeGenAI.nuspec `
       -Prop version=$VERSION `
       -Prop genai_nuget_ext=$(genai_nuget_ext) `
@@ -53,4 +53,4 @@ steps:
   displayName: 'Publish Artifact: ONNXRuntime Genai capi'
   inputs:
     PathtoPublish: '$(Build.ArtifactStagingDirectory)\nuget'
-    ArtifactName: $(artifactName)-nuget'
+    ArtifactName: $(artifactName)-nuget
